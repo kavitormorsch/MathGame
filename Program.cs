@@ -1,33 +1,45 @@
-﻿using System.Linq.Expressions;
+﻿using System.ComponentModel;
+using System.Diagnostics;
+using System.Linq.Expressions;
 
 namespace MathGame
 {
     internal class Program
     {
-        public static List<string> operationsRecord = new();
+        public static List<GameRecord> gameRecords = new();
+        
+        public enum Difficulties
+        {
+            Easy,
+            Medium,
+            Hard
+        }
+
+        public static Difficulties selectedDifficulty;
+
 
         static void Main(string[] args)
         {
             string? expressionOperator;
-            int number1 = 0;
-            int number2 = 0;
             bool gameFinished = false;
+            
 
             do
             {
                 Console.WriteLine(@"Welcome to the math game!
     Select your option:
-    + for sums.
-    - for subtraction.
-    / for divisions.
-    * for multiplication.
-    R for a record of operations.
+    + for the addition game.
+    - for the subtraction game.
+    / for the division game.
+    * for the multiplication game.
+    ? for a randomized game.
+    R for a record of past games.
 
 Or press Enter to quit." + "\n");
                 
                 expressionOperator = Console.ReadLine();
 
-                switch(expressionOperator)
+                switch(expressionOperator.ToLower())
                 {
                     case "":
                         gameFinished = true;
@@ -36,19 +48,18 @@ Or press Enter to quit." + "\n");
                     case "-":
                     case "/":
                     case "*":
-                        number1 = 0;
-                        number2 = 0;
-                        GetNumbers(ref number1, ref number2);
+                    case "?":
                         try
                         {
-                            DoOperation(number1, number2, expressionOperator);
+                            SelectDifficulty();
+                            DoOperation(expressionOperator);
                         }
-                        catch
+                        catch(Exception ex)
                         {
-
+                            Console.WriteLine(ex.Message);
                         }
                         break;
-                    case "R":
+                    case "r":
                         DisplayRecord();
                         break;
                     default:
@@ -63,151 +74,249 @@ Or press Enter to quit." + "\n");
 
 
 
-        static void DoOperation(int number1, int number2, string expressionOperator)
+        static void DoOperation(string expressionOperator)
         {
-            int result = 0;
+            bool wrongAnswer = false;
+            int score = 0;
+
+            Random rand = new();
+            string[] operatorsForRandomized = { "+", "-", "/", "*"};
+
+            Stopwatch stopWatch = new();
+            stopWatch.Start();
+            TimeSpan elapsedTime;
+
+            string? gameType = "";
+
             switch (expressionOperator)
             {
                 case "+":
-                    result = number1 + number2;
+                    gameType = "Addition";
                     break;
                 case "-":
-                    result = number1 - number2;
+                    gameType = "Subtraction";
                     break;
                 case "/":
-                    if (ManageDivisionNumbers(ref number1, ref number2))
-                    {
-                        result = number1 / number2;
+                    gameType = "Division";
+                    break;
+                case "*":
+                    gameType = "Multiplication";
+                    break;
+                case "?":
+                    gameType = "Randomized";
+                    break;
+
+            }
+            while (!wrongAnswer)
+            {
+                Console.Clear();
+
+                if (gameType == "Randomized")
+                    expressionOperator = operatorsForRandomized[rand.Next(0,3)];
+
+                int result = 0;
+                switch (expressionOperator)
+                {
+                    case "+":
+                        int number1 = GenerateNumber();
+                        int number2 = GenerateNumber();
+                        result = number1 + number2;
+
+                        Console.WriteLine($"{gameType}\n{number1} + {number2} = ?");
                         break;
+                    case "-":
+                        number1 = GenerateNumber();
+                        number2 = GenerateNumber();
+                        result = number1 - number2;
+                        Console.WriteLine($"{gameType}\n{number1} - {number2} = ?");
+                        break;
+                    case "/":
+                        number1 = 0;
+                        number2 = 0;
+
+                        bool validNumbers = false;
+
+                        while (!validNumbers)
+                        {
+                            number1 = GenerateNumber(true);
+                            number2 = GenerateNumber(secondDivisionNumber: true);
+
+                            validNumbers = ValidateDivisionNumbers(number1, number2);
+                        }
+                        result = number1 / number2;
+
+                        Console.WriteLine($"{gameType}\n{number1} / {number2} = ?");
+                        break;
+                    case "*":
+                        number1 = GenerateNumber();
+                        number2 = GenerateNumber(multiplication: true);
+                        result = number1 * number2;
+
+                        Console.WriteLine($"{gameType}\n{number1} * {number2} = ?");
+                        break;
+                }
+                int userAnswer = ParseInput();
+
+                if (userAnswer != result)
+                {
+                    stopWatch.Stop();
+                    Console.WriteLine($"Incorrect, the answer was {result}. Your score was {score}");
+                    Console.WriteLine("Press enter to quit the game or R to try again.");
+                    string? userInput = Console.ReadLine();
+                    if (userInput.ToLower() == "r")
+                    {
+                        elapsedTime = stopWatch.Elapsed;
+                        gameRecords.Add(new GameRecord(String.Format("{0:c}:{1:c}:{2:c}", elapsedTime.Hours, elapsedTime.Minutes, elapsedTime.Seconds), gameType, score));
+                        stopWatch.Restart();
+                        score = 0;
                     }
                     else
-                        throw new InvalidOperationException("InvalidOperationException: Could not divide the numbers.");             
-                case "*":
-                    result = number1 * number2;
-                    break;
-                default:
-                    throw new ArgumentException("ArgumentException: Invalid operator.");
+                        wrongAnswer = true;
+                }
+                else
+                {
+                    Console.WriteLine("Correct, press enter to go to the next question");
+                    Console.ReadLine();   
+                    score++;
+                }
             }
+            elapsedTime = stopWatch.Elapsed; 
+            gameRecords.Add(new GameRecord(elapsedTime.ToString("hh\\:mm\\:ss"), gameType, score));
+            
+            Console.Clear();
+        }
 
-            string operation = String.Format("{0} {1} {2} = {3}", number1, expressionOperator, number2, result);        
-            Console.WriteLine($"\n Result: {operation} \n");
-
-            operationsRecord.Add(operation);
+        static int GenerateNumber(bool firstDivisionNumber = false, bool secondDivisionNumber = false, bool multiplication = false)
+        {
+            Random rand = new();
+            if (!firstDivisionNumber && !secondDivisionNumber && !multiplication)
+                switch (selectedDifficulty)
+                {
+                    case Difficulties.Easy:
+                        return rand.Next(1, 101);
+                    case Difficulties.Medium:
+                        return rand.Next(10, 1001);
+                    case Difficulties.Hard:
+                        return rand.Next(100, 10001);
+                    default:
+                        throw new ArgumentException("ArgumentException: No difficulty chosen!");
+                }
+            else if (firstDivisionNumber && !multiplication && !secondDivisionNumber)
+                switch (selectedDifficulty)
+                {
+                    case Difficulties.Easy:
+                    case Difficulties.Medium:
+                    case Difficulties.Hard:
+                        return rand.Next(0, 101);
+                    default:
+                        throw new ArgumentException("ArgumentException: No difficulty chosen!");
+                }
+            else if (secondDivisionNumber && !multiplication && !firstDivisionNumber)
+                switch (selectedDifficulty)
+                {
+                    case Difficulties.Easy:
+                        return rand.Next(2, 101);
+                    case Difficulties.Medium:
+                        return rand.Next(10, 1001);
+                    case Difficulties.Hard:
+                        return rand.Next(20, 10001);
+                    default:
+                        throw new ArgumentException("ArgumentException: No difficulty chosen!");
+                }
+            else if (multiplication && !secondDivisionNumber && !firstDivisionNumber)
+                switch (selectedDifficulty)
+                {
+                    case Difficulties.Easy:
+                        return rand.Next(2, 20);
+                    case Difficulties.Medium:
+                        return rand.Next(5, 50);
+                    case Difficulties.Hard:
+                        return rand.Next(10, 100);
+                    default:
+                        throw new ArgumentException("ArgumentException: No difficulty chosen!");
+                }
+            else
+                return 0;
         }
 
         static int ParseInput()
         {
-            string? userInput = Console.ReadLine();
-
-            if (!int.TryParse(userInput, out int parsedNumber))
-                throw new InvalidDataException("InvalidDataException: Input is not a number.");
-
-            return parsedNumber;
-        }
-
-        static void GetNumbers(ref int number1, ref int number2)
-        {
             do
             {
-                Console.Write("First number: ");
-                try
-                {
-                    number1 = ParseInput();
-                    break;
-                }
-                catch (InvalidDataException ex)
-                {
-                    Console.WriteLine(ex.Message);
-                }
+                string? userInput = Console.ReadLine();
 
-            } while (true);
-
-            do
-            {
-                Console.Write("Second number: ");
-                try
-                {
-                    number2 = ParseInput();
-                    break;
+                if (!int.TryParse(userInput, out int parsedNumber))
+                { 
+                    Console.WriteLine("Input is not a number, try again.\r");
+                    Console.SetCursorPosition(0, 2);
+                    Console.Write("                                                    ");
+                    Console.SetCursorPosition(0, 2);
                 }
-                catch (InvalidDataException ex)
-                {
-                    Console.WriteLine(ex.Message);
-                }
-
+                else
+                    return parsedNumber;
             } while (true);
         }
+
 
         static void DisplayRecord()
         {
-            Console.WriteLine("\n Record of past operations: ");
-            for (int i = 0; i < operationsRecord.Count; i++)
+            Console.Clear();
+            Console.WriteLine("Time\t\tGame Type\t\tScore");
+            for (int i = 0; i < gameRecords.Count; i++)
             {
-                Console.WriteLine($"{i + 1}: {operationsRecord[i]}");
+                Console.WriteLine($"{gameRecords[i].time}\t{gameRecords[i].typeOfGame}\t\t{gameRecords[i].score}");
             }
             Console.WriteLine("");
         }
 
-        static bool ManageDivisionNumbers(ref int number1, ref int number2)
+        static bool ValidateDivisionNumbers(int number1, int number2)
         {
+            bool validDividend;
+            bool integerDivision;
 
-            bool validDividend = false;
-            bool integerDivision = false;
-            bool validDivisor = false;
-
-            while (!validDividend && !validDivisor && !integerDivision)
-            {
+            if (number1 > 100 || number1 < 0)
                 validDividend = false;
+            else
+                validDividend = true;
+
+            if (number1 % number2 != 0)
                 integerDivision = false;
-                validDivisor = false;
+            else
+                integerDivision = true;
 
-                while (!validDividend)
-                {
-                    if (number1 > 100 || number1 < 0)
-                    {
-                        Console.Write("Dividend is out of the 0 - 100 range, input a new number for the dividend: ");
-                        number1 = ParseInput();
-                    }
-                    else
-                    {
-                        validDividend = true;
-
-                    }
-
-                }
-                while (!validDivisor)
-                {
-                    if (number2 == 0)
-                    {
-                        Console.Write("Divisor cannot be 0, input a new number for the divisor: ");
-                        number2 = ParseInput();
-                    }
-                    else
-                    {
-                        validDivisor = true;
-                        break;
-                    }
-
-                }
-
-                while (!integerDivision)
-                {
-                    if (number1 % number2 != 0)
-                    {
-                        Console.WriteLine("Division has remainder, try another pair of numbers.");
-                        GetNumbers(ref number1, ref number2);
-                    }
-                    else
-                    {
-                        integerDivision = true;
-                    }
-                }
-            }
-            if (validDividend && validDivisor && integerDivision)
+            if (validDividend && integerDivision)
                 return true;
             else
                 return false;
         }
+
+        static void SelectDifficulty()
+        {
+            Console.Clear();
+            do
+            {
+
+                Console.WriteLine("Select your difficulty:\n 'E' for easy difficulty. \n 'M' for medium difficulty. \n 'H' for hard difficulty.");
+                string? userInput = Console.ReadLine().ToLower();
+
+                switch (userInput)
+                {
+                    case "e":
+                        selectedDifficulty = Difficulties.Easy;
+                        return;
+                    case "m":
+                        selectedDifficulty = Difficulties.Medium;
+                        return;
+                    case "h":
+                        selectedDifficulty = Difficulties.Hard;
+                        return;
+                    default:
+                        Console.WriteLine("Invalid input, try again.");
+                        break;
+                }
+            } while (true);
+            
+        }
     }
-        
+  
 }
